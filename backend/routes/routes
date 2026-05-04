@@ -1,0 +1,16 @@
+const express = require('express');
+const router = express.Router();
+const authCtrl = require('../controllers/authController');
+const userCtrl = require('../controllers/utilisateurController');
+const { authentifier, autoriser, adminSeulement } = require('../middlewares/auth');
+
+router.post('/auth/login', authCtrl.login);
+router.post('/auth/refresh', authCtrl.refresh);
+router.post('/auth/logout', authentifier, authCtrl.logout);
+router.get('/utilisateurs', authentifier, autoriser('utilisateur:read'), userCtrl.lister);
+router.get('/utilisateurs/:id', authentifier, autoriser('utilisateur:read'), userCtrl.detail);
+router.post('/utilisateurs', authentifier, adminSeulement, userCtrl.creer);
+router.put('/utilisateurs/:id', authentifier, userCtrl.modifier);
+router.delete('/utilisateurs/:id', authentifier, adminSeulement, userCtrl.desactiver);
+
+module.exports = router;
