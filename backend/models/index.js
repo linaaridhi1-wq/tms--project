@@ -10,8 +10,11 @@ const Permission  = require('./Permission')(sequelize);
 const Utilisateur = require('./Utilisateur')(sequelize);
 const Session     = require('./Session')(sequelize);
 const Client      = require('./Client')(sequelize);
+const Tender      = require('./Tender')(sequelize);
+const Submission  = require('./Submission')(sequelize);
+const KnowledgeItem = require('./KnowledgeItem')(sequelize);
 
-const models = { Role, Permission, Utilisateur, Session, Client, sequelize, Sequelize };
+const models = { Role, Permission, Utilisateur, Session, Client, Tender, Submission, KnowledgeItem, sequelize, Sequelize };
 
 Object.values(models).forEach((model) => {
   if (model.associate) model.associate(models);

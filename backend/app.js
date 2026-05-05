@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const routes = require('./routes');
+const { sequelize } = require('./models');
 
 const app = express();
 app.use(helmet());
@@ -23,4 +24,16 @@ const PORT = process.env.PORT || 4000;
 app.get('/', (req, res) => {
   res.send('API fonctionne 🚀');
 });
-app.listen(PORT, () => console.log('Serveur demarre sur le port ' + PORT));
+
+const start = async () => {
+  try {
+    await sequelize.authenticate();
+    await sequelize.sync();
+    app.listen(PORT, () => console.log('Serveur demarre sur le port ' + PORT));
+  } catch (err) {
+    console.error('Erreur connexion DB:', err.message || err);
+    process.exit(1);
+  }
+};
+
+start();
