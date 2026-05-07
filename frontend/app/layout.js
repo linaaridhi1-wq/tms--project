@@ -8,8 +8,11 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Yellomind TMS — Tender Management System",
+  title: "Yellomind TMS  App",
   description: "Intelligent platform for managing calls for tenders, proposals, and client relationships.",
+  icons: {
+    icon: "/logo.jpg",
+  },
 };
 
 export default function RootLayout({ children }) {

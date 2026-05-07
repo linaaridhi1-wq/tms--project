@@ -1,17 +1,17 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, FileText, Clock, Filter, ChevronDown, X, Calendar, DollarSign, User, Building2, Paperclip } from 'lucide-react';
+import { Plus, Search, FileText, Clock, X, Building2, Pencil, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../../lib/api';
 import ConfirmModal from '../../../components/ConfirmModal';
 
 const STATUS_MAP = {
-  detecte: { label: 'Détecté', badge: 'badge-slate', dot: '#94A3B8' },
-  qualifie: { label: 'Qualifié', badge: 'badge-blue', dot: '#3B82F6' },
-  en_cours: { label: 'En cours', badge: 'badge-amber', dot: '#F59E0B' },
-  soumis: { label: 'Soumis', badge: 'badge-purple', dot: '#7C3AED' },
-  gagne: { label: 'Gagné', badge: 'badge-green', dot: '#10B981' },
-  perdu: { label: 'Perdu', badge: 'badge-red', dot: '#EF4444' },
+  detecte:  { label: 'Détecté',  badge: 'badge-slate',  dot: '#94A3B8' },
+  qualifie: { label: 'Qualifié', badge: 'badge-blue',   dot: '#3B82F6' },
+  en_cours: { label: 'En cours', badge: 'badge-amber',  dot: '#F59E0B' },
+  soumis:   { label: 'Soumis',   badge: 'badge-purple', dot: '#7C3AED' },
+  gagne:    { label: 'Gagné',    badge: 'badge-green',  dot: '#10B981' },
+  perdu:    { label: 'Perdu',    badge: 'badge-red',    dot: '#EF4444' },
 };
 
 const EMPTY_FORM = { titre: '', client: '', date_limite: '', budget: '', statut: 'detecte', description: '', responsable: '' };
@@ -32,14 +32,21 @@ function Modal({ open, title, onClose, children }) {
 }
 
 export default function TendersPage() {
-  const [tenders, setTenders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
+  const [tenders, setTenders]       = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [search,  setSearch]        = useState('');
+  const [filter,  setFilter]        = useState('all');
+  const [showForm, setShowForm]     = useState(false);
+  const [editing, setEditing]       = useState(null);   // null = create, object = edit
+  const [form,    setForm]          = useState(EMPTY_FORM);
+  const [saving,  setSaving]        = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [userRole, setUserRole]     = useState(null);
+
+  useEffect(() => {
+    const raw = localStorage.getItem('user');
+    if (raw) try { setUserRole(JSON.parse(raw)?.role); } catch { /**/ }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +62,8 @@ export default function TendersPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const canWrite = userRole === 'Manager' || userRole === 'Admin';
+
   const filtered = tenders.filter(t => {
     const query = search.toLowerCase();
     const matchSearch = (t.titre || '').toLowerCase().includes(query) || (t.client || '').toLowerCase().includes(query);
@@ -62,13 +71,22 @@ export default function TendersPage() {
     return matchSearch && matchFilter;
   });
 
+  const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setShowForm(true); };
+  const openEdit   = (t)  => { setEditing(t);   setForm({ titre: t.titre, client: t.client, date_limite: t.date_limite ? t.date_limite.substring(0,10) : '', budget: t.budget || '', statut: t.statut, description: t.description || '', responsable: t.responsable || '' }); setShowForm(true); };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/tenders', form);
-      toast.success('Appel d\'offres créé');
+      if (editing) {
+        await api.put(`/tenders/${editing.tender_id}`, form);
+        toast.success("Appel d'offres mis à jour");
+      } else {
+        await api.post('/tenders', form);
+        toast.success("Appel d'offres créé");
+      }
       setShowForm(false);
+      setEditing(null);
       setForm(EMPTY_FORM);
       load();
     } catch (err) {
@@ -76,10 +94,6 @@ export default function TendersPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDelete = (tender) => {
-    setDeleteConfirm(tender);
   };
 
   const confirmDelete = async () => {
@@ -95,7 +109,6 @@ export default function TendersPage() {
   };
 
   const f = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
-
   const now = new Date();
   const counts = Object.fromEntries(Object.keys(STATUS_MAP).map(s => [s, tenders.filter(t => t.statut === s).length]));
 
@@ -106,9 +119,11 @@ export default function TendersPage() {
           <div className="page-breadcrumb"><span>TMS</span><span>›</span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Appels d&apos;offres</span></div>
           <h1 className="page-title" style={{ marginTop: 2 }}>Appels d&apos;offres</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          <Plus size={16} /> Nouvel appel d&apos;offres
-        </button>
+        {canWrite && (
+          <button className="btn btn-primary" onClick={openCreate}>
+            <Plus size={16} /> Nouvel appel d&apos;offres
+          </button>
+        )}
       </div>
 
       <div className="page-body">
@@ -120,7 +135,7 @@ export default function TendersPage() {
               onClick={() => setFilter(tab.key)}
               style={{
                 padding: '7px 14px', borderRadius: 'var(--radius-md)', fontWeight: 600,
-                fontSize: 13, cursor: 'pointer', border: 'none', transition: 'all .15s',
+                fontSize: 13, cursor: 'pointer', transition: 'all .15s',
                 background: filter === tab.key ? 'var(--primary)' : 'var(--surface)',
                 color: filter === tab.key ? '#fff' : 'var(--text-secondary)',
                 boxShadow: filter === tab.key ? '0 4px 12px rgba(124,58,237,.3)' : 'none',
@@ -132,7 +147,6 @@ export default function TendersPage() {
           ))}
         </div>
 
-        {/* Table Card */}
         <div className="card">
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, alignItems: 'center' }}>
             <div className="search-bar" style={{ flex: 1, maxWidth: 340 }}>
@@ -143,73 +157,72 @@ export default function TendersPage() {
           </div>
 
           {loading ? (
-            <div className="empty-state">
-              <div className="empty-state-icon"><FileText size={28} /></div>
-              <div className="empty-state-title">Chargement…</div>
-              <div className="empty-state-desc">Récupération des appels d&apos;offres.</div>
-            </div>
+            <div className="empty-state"><div className="empty-state-icon"><FileText size={28} /></div><div className="empty-state-title">Chargement…</div></div>
           ) : filtered.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon"><FileText size={28} /></div>
               <div className="empty-state-title">Aucun appel d&apos;offres</div>
               <div className="empty-state-desc">Ajoutez votre premier appel d&apos;offres pour commencer.</div>
-              <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={15} /> Nouveau</button>
+              {canWrite && <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nouveau</button>}
             </div>
           ) : (
-            <table className="tms-table">
-              <thead><tr>
-                <th>Intitulé</th><th>Client</th><th>Statut</th><th>Responsable</th><th>Échéance</th><th>Budget</th><th style={{ textAlign: 'right' }}>Actions</th>
-              </tr></thead>
-              <tbody>
-                {filtered.map(t => {
-                  const s = STATUS_MAP[t.statut] || STATUS_MAP.detecte;
-                  const daysLeft = t.date_limite ? Math.ceil((new Date(t.date_limite) - now) / 86400000) : null;
-                  return (
-                    <tr key={t.tender_id}>
-                      <td>
-                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t.titre}</div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <Building2 size={13} color="var(--text-muted)" />
-                          <span style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>{t.client}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`badge ${s.badge}`}><span className="badge-dot" style={{ background: s.dot }} />{s.label}</span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <div style={{ width: 24, height: 24, background: '#EDE9FE', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#7C3AED' }}>
-                            {t.responsable?.[0]}
+            <div className="table-scroll">
+              <table className="tms-table">
+                <thead><tr>
+                  <th>Intitulé</th><th>Client</th><th>Statut</th><th>Responsable</th><th>Échéance</th><th>Budget</th>
+                  {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
+                </tr></thead>
+                <tbody>
+                  {filtered.map(t => {
+                    const s = STATUS_MAP[t.statut] || STATUS_MAP.detecte;
+                    const daysLeft = t.date_limite ? Math.ceil((new Date(t.date_limite) - now) / 86400000) : null;
+                    return (
+                      <tr key={t.tender_id}>
+                        <td><div style={{ fontWeight: 600, fontSize: 13.5 }}>{t.titre}</div></td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <Building2 size={13} color="var(--text-muted)" />
+                            <span style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>{t.client}</span>
                           </div>
-                          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t.responsable || '—'}</span>
-                        </div>
-                      </td>
-                      <td>
-                        {daysLeft !== null && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <Clock size={12} color={daysLeft < 0 ? '#EF4444' : daysLeft < 7 ? '#F59E0B' : 'var(--text-muted)'} />
-                            <span style={{ fontSize: 13, fontWeight: 600, color: daysLeft < 0 ? '#EF4444' : daysLeft < 7 ? '#F59E0B' : 'var(--text-secondary)' }}>
-                              {daysLeft < 0 ? 'Expiré' : `J-${daysLeft}`}
-                            </span>
+                        </td>
+                        <td><span className={`badge ${s.badge}`}><span className="badge-dot" style={{ background: s.dot }} />{s.label}</span></td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {t.responsable && <div style={{ width: 24, height: 24, background: '#EDE9FE', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#7C3AED' }}>{t.responsable?.[0]}</div>}
+                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t.responsable || '—'}</span>
                           </div>
+                        </td>
+                        <td>
+                          {daysLeft !== null && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <Clock size={12} color={daysLeft < 0 ? '#EF4444' : daysLeft < 7 ? '#F59E0B' : 'var(--text-muted)'} />
+                              <span style={{ fontSize: 13, fontWeight: 600, color: daysLeft < 0 ? '#EF4444' : daysLeft < 7 ? '#F59E0B' : 'var(--text-secondary)' }}>
+                                {daysLeft < 0 ? 'Expiré' : `J-${daysLeft}`}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13.5 }}>{t.budget || '—'}</td>
+                        {canWrite && (
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(t)} title="Modifier"><Pencil size={14} /></button>
+                              <button className="btn btn-danger btn-icon btn-sm" onClick={() => setDeleteConfirm(t)} title="Supprimer"><Trash2 size={14} /></button>
+                            </div>
+                          </td>
                         )}
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13.5 }}>{t.budget || '—'}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t)} style={{ fontSize: 12 }}>Supprimer</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
 
-      <Modal open={showForm} title="Nouvel appel d'offres" onClose={() => setShowForm(false)}>
+      {/* Create / Edit Modal */}
+      <Modal open={showForm} title={editing ? "Modifier l'appel d'offres" : "Nouvel appel d'offres"} onClose={() => { setShowForm(false); setEditing(null); }}>
         <form onSubmit={handleSave}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
             <div className="form-group">
@@ -246,8 +259,8 @@ export default function TendersPage() {
             </div>
           </div>
           <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Création…' : 'Créer'}</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Enregistrement…' : editing ? 'Mettre à jour' : 'Créer'}</button>
           </div>
         </form>
       </Modal>

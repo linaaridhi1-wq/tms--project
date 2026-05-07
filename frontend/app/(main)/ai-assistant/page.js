@@ -1,178 +1,545 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, Paperclip, Bot, User as UserIcon, Loader2, X, FileText, CheckCircle2, AlertCircle, XCircle, Zap } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import {
+  Sparkles, Upload, FileText, X, CheckCircle2, AlertCircle,
+  XCircle, ChevronDown, ChevronUp, Target, Zap, TrendingUp,
+  Clock, MapPin, DollarSign, Layers, Award, AlertTriangle, ArrowLeft
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+import api from '../../../lib/api';
+import { useEffect } from 'react';
 
-const SUGGESTED = [
-  'Rédige un résumé exécutif pour un projet cloud',
-  'Génère une proposition technique pour un audit sécurité',
-  'Vérifie la conformité de ma soumission',
-  'Quels sont les risques d\'un projet ERP ?',
+// ── Score Gauge (SVG circle) ──────────────────────────────────────────
+function ScoreGauge({ score, label }) {
+  const r = 80, cx = 100, cy = 100;
+  const circ = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, score)) / 100;
+  const offset = circ * (1 - pct);
+  const color = score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : score >= 40 ? '#F97316' : '#EF4444';
+  const labelColor = color;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <svg width={200} height={200} viewBox="0 0 200 200">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={14} />
+        <circle
+          cx={cx} cy={cy} r={r} fill="none"
+          stroke={color} strokeWidth={14}
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 100 100)"
+          style={{ transition: 'stroke-dashoffset 1.2s ease' }}
+        />
+        <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--text-primary)" fontSize="36" fontWeight="800">{score}</text>
+        <text x={cx} y={cy + 16} textAnchor="middle" fill="var(--text-muted)" fontSize="12">/100</text>
+      </svg>
+      <span style={{
+        padding: '6px 20px', borderRadius: 99, fontWeight: 700, fontSize: 14,
+        background: color + '20', color: labelColor, border: `1.5px solid ${color}40`
+      }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Dimension bar ─────────────────────────────────────────────────────
+function DimBar({ label, score, max, icon: Icon, color }) {
+  const pct = Math.round((score / max) * 100);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+          <Icon size={13} color={color} />
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>{label}</span>
+        </div>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>{score}/{max}</span>
+      </div>
+      <div className="progress-bar">
+        <div style={{
+          height: '100%', width: `${pct}%`, borderRadius: 99,
+          background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+          transition: 'width 1s ease'
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Upload Zone ───────────────────────────────────────────────────────
+function UploadZone({ onFile, disabled }) {
+  const [drag, setDrag] = useState(false);
+  const inputRef = useRef(null);
+
+  const handle = (f) => {
+    if (!f || f.type !== 'application/pdf') { toast.error('PDF uniquement'); return; }
+    if (f.size > 20 * 1024 * 1024) { toast.error('Fichier trop grand (max 20 MB)'); return; }
+    onFile(f);
+  };
+
+  return (
+    <div
+      onClick={() => !disabled && inputRef.current?.click()}
+      onDragOver={e => { e.preventDefault(); setDrag(true); }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={e => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files[0]); }}
+      style={{
+        border: `2px dashed ${drag ? 'var(--primary)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-lg)', padding: '48px 32px', textAlign: 'center',
+        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
+        background: drag ? 'var(--primary-subtle)' : 'var(--surface-2)',
+        transition: 'all .2s'
+      }}
+    >
+      <input ref={inputRef} type="file" accept=".pdf" style={{ display: 'none' }}
+        onChange={e => handle(e.target.files?.[0])} disabled={disabled} />
+      <div style={{
+        width: 64, height: 64, borderRadius: 'var(--radius-lg)', margin: '0 auto 16px',
+        background: 'linear-gradient(135deg,#7C3AED,#6D28D9)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <Upload size={28} color="#fff" />
+      </div>
+      <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', marginBottom: 6 }}>
+        Déposer un cahier des charges PDF
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+        Glisser-déposer ou cliquer · PDF · Max 20 MB
+      </div>
+    </div>
+  );
+}
+
+// ── Pipeline Steps ────────────────────────────────────────────────────
+const STEPS = [
+  { label: 'Extraction du PDF', desc: 'Lecture du texte brut' },
+  { label: 'Analyse LLM', desc: 'Extraction structurée des exigences' },
+  { label: 'Calcul du score TFS', desc: 'Évaluation hybride règles + IA' },
 ];
 
-const BOT_INTRO = {
-  role: 'bot',
-  content: "Bonjour ! Je suis votre **Assistant IA** Yellomind.\n\nJe peux vous aider à :\n\n📄 **Analyser** des documents d'appels d'offres\n✍️ **Générer** des sections de propositions\n✅ **Vérifier** la conformité de vos soumissions\n💡 **Suggérer** du contenu depuis la base de savoirs\n\nComment puis-je vous aider ?"
+function PipelineProgress({ step }) {
+  return (
+    <div style={{ padding: '32px 0' }}>
+      <div style={{ fontWeight: 700, fontSize: 16, textAlign: 'center', marginBottom: 28, color: 'var(--text-primary)' }}>
+        Analyse IA en cours…
+      </div>
+      {STEPS.map((s, i) => {
+        const done = i < step;
+        const active = i === step;
+        return (
+          <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 20 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', flexShrink: 0, display: 'flex',
+              alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700,
+              background: done ? '#10B981' : active ? 'var(--primary)' : 'var(--border)',
+              color: done || active ? '#fff' : 'var(--text-muted)',
+              boxShadow: active ? '0 0 0 4px rgba(124,58,237,.2)' : 'none',
+              animation: active ? 'pulse 1.5s ease infinite' : 'none'
+            }}>
+              {done ? <CheckCircle2 size={16} /> : i + 1}
+            </div>
+            <div style={{ paddingTop: 6 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: done ? '#10B981' : active ? 'var(--text-primary)' : 'var(--text-muted)' }}>{s.label}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+            </div>
+          </div>
+        );
+      })}
+      <style>{`@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(124,58,237,.2)}50%{box-shadow:0 0 0 8px rgba(124,58,237,.05)}}`}</style>
+    </div>
+  );
+}
+
+// ── Requirements list ─────────────────────────────────────────────────
+const CAT_COLORS = {
+  Technical: '#3B82F6', Financial: '#10B981', Legal: '#7C3AED',
+  Operational: '#F59E0B', Functional: '#06B6D4', Quality: '#EC4899',
 };
 
-function renderContent(text) {
-  return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>');
+function RequirementsList({ requirements }) {
+  const [open, setOpen] = useState(null);
+  const cats = [...new Set(requirements.map(r => r.category))];
+  const [filter, setFilter] = useState('all');
+  const filtered = filter === 'all' ? requirements : requirements.filter(r => r.category === filter);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {['all', ...cats].map(c => (
+          <button key={c} onClick={() => setFilter(c)} style={{
+            padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: `1.5px solid ${filter === c ? 'var(--primary)' : 'var(--border)'}`,
+            background: filter === c ? 'var(--primary-subtle)' : 'transparent',
+            color: filter === c ? 'var(--primary)' : 'var(--text-muted)'
+          }}>{c === 'all' ? `Toutes (${requirements.length})` : c}</button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {filtered.map((req, i) => (
+          <div key={req.id || i} style={{
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden',
+            background: 'var(--surface)'
+          }}>
+            <div onClick={() => setOpen(open === i ? null : i)}
+              style={{ padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                background: (CAT_COLORS[req.category] || '#7C3AED') + '20',
+                color: CAT_COLORS[req.category] || '#7C3AED'
+              }}>{req.category}</span>
+              <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1 }}>
+                {req.description?.slice(0, 80)}{req.description?.length > 80 ? '…' : ''}
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, marginRight: 8,
+                background: req.priority === 'Must Have' ? '#FEF2F2' : req.priority === 'Should Have' ? '#FFFBEB' : '#F0FDF4',
+                color: req.priority === 'Must Have' ? '#DC2626' : req.priority === 'Should Have' ? '#D97706' : '#059669'
+              }}>{req.priority || 'Must Have'}</span>
+              {open === i ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
+            </div>
+            {open === i && (
+              <div style={{ padding: '0 16px 14px', fontSize: 13, color: 'var(--text-secondary)', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                {req.description}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function simulateAI(msg) {
-  const l = msg.toLowerCase();
-  if (l.includes('résumé') || l.includes('executive'))
-    return "Voici un **résumé exécutif** :\n\nNotre société propose une solution innovante basée sur **10 ans d'expertise**. Nos engagements :\n✅ Délais respectés\n✅ Qualité certifiée ISO 9001\n✅ Support 24/7 pendant 12 mois\n✅ Formation complète des équipes";
-  if (l.includes('conformit') || l.includes('vérifie'))
-    return "**Rapport de conformité :**\n\n✅ 18/22 exigences couvertes\n⚠️ 3 exigences partielles (clauses 4.2, 7.1, 9.3)\n❌ 1 exigence manquante (Certification ISO 27001)\n\n**Recommandation :** Complétez les clauses manquantes avant soumission.";
-  if (l.includes('risque'))
-    return "**Risques typiques :**\n\n🔴 Critiques : Dépassement budget, changement périmètre\n🟡 Modérés : Retards validation, turnover équipe\n🟢 Faibles : Documentation, formation utilisateurs";
-  return "Merci ! Pour une réponse précise, précisez :\n1. Le **secteur** (IT, Industrie, Public)\n2. La **section** souhaitée (technique, commerciale)\n3. Ou **uploadez un PDF** pour une analyse automatique";
-}
-
+// ── Main Page ─────────────────────────────────────────────────────────
 export default function AIAssistantPage() {
-  const [messages, setMessages] = useState([BOT_INTRO]);
-  const [input,    setInput]    = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [analysis, setAnalysis] = useState(null);
-  const [fileName, setFileName] = useState('');
-  const bottomRef = useRef(null);
+  const [file, setFile] = useState(null);
+  const [tenderId, setTenderId] = useState('');
+  const [pipelineStep, setPipelineStep] = useState(-1);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('score');
+  const [history, setHistory] = useState([]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await api.get('/ai/history');
+      setHistory(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
-  const handleSend = async (text) => {
-    const msg = (text || input).trim();
-    if (!msg) return;
-    setInput('');
-    setMessages(p => [...p, { role: 'user', content: msg }]);
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 1000 + Math.random() * 800));
-    setMessages(p => [...p, { role: 'bot', content: simulateAI(msg) }]);
-    setLoading(false);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  const reset = () => { setFile(null); setResult(null); setError(null); setPipelineStep(-1); setTenderId(''); loadHistory(); };
+
+  const loadPastAnalysis = async (tid) => {
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const resA = await api.get(`/tenders/${tid}/analysis`);
+      const resS = await api.get(`/tenders/${tid}/score`);
+      setResult({ analysis: resA.data, score: resS.data });
+    } catch (e) {
+      toast.error('Erreur lors du chargement de l\'analyse');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleFile = (e) => {
-    const f = e.target.files?.[0];
-    if (!f || f.type !== 'application/pdf') { toast.error('PDF uniquement'); return; }
-    setFileName(f.name);
-    const tid = toast.loading('Analyse du PDF…');
-    setTimeout(() => {
-      toast.success('Analyse terminée', { id: tid });
-      setAnalysis({
-        budget: '1 200 000 DA', deadline: '30 août 2025',
-        exigences: [
-          { id: 1, texte: 'Application web responsive', statut: 'couverte' },
-          { id: 2, texte: 'Compatibilité mobile', statut: 'couverte' },
-          { id: 3, texte: 'Certification ISO 27001', statut: 'manquante' },
-          { id: 4, texte: 'Livraison sous 6 mois', statut: 'partielle' },
-          { id: 5, texte: 'Support 24/7', statut: 'couverte' },
-        ],
-      });
-      setMessages(p => [...p, { role: 'bot', content: `✅ **PDF analysé** : "${f.name}"\n\nJ'ai extrait **5 exigences clés** avec un budget de **1 200 000 DA** et une échéance au **30 août 2025**.\n\nLes résultats sont affichés dans le panneau latéral. Que souhaitez-vous générer ?` }]);
-    }, 2500);
-  };
+  const runAnalysis = useCallback(async () => {
+    if (!file || !tenderId) { toast.error('Sélectionnez un tender ID et un fichier PDF'); return; }
+    setLoading(true); setError(null); setResult(null); setPipelineStep(0);
+
+    try {
+      const fd = new FormData();
+      fd.append('pdf', file);
+      setPipelineStep(1);
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/tenders/${tenderId}/analyze`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd }
+      );
+      setPipelineStep(2);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.detail || 'Erreur analyse');
+      setPipelineStep(3);
+      await new Promise(r => setTimeout(r, 600));
+      setResult(data);
+      loadHistory();
+      toast.success('Analyse IA complète !');
+    } catch (e) {
+      setError(e.message);
+      toast.error(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [file, tenderId]);
+
+  const score = result?.score;
+  const analysis = result?.analysis;
 
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-breadcrumb"><span>TMS</span><span>›</span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Assistant IA</span></div>
+          <div className="page-breadcrumb"><span>TMS</span><span>›</span>
+            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Analyse IA</span>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
-            <h1 className="page-title">Assistant IA</h1>
-            <span style={{ fontSize: 11.5, fontWeight: 600, color: '#10B981', background: '#ECFDF5', padding: '3px 10px', borderRadius: 99, border: '1px solid #D1FAE5', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} /> En ligne
-            </span>
+            <h1 className="page-title">Analyse IA — Tender Fit Score</h1>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <label htmlFor="pdf-upload" className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-            <Paperclip size={15} /> Analyser un PDF
-          </label>
-          <input id="pdf-upload" type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleFile} />
-          <button className="btn btn-ghost btn-sm" onClick={() => { setMessages([BOT_INTRO]); setAnalysis(null); setFileName(''); }}>
-            <X size={14} /> Effacer
+        {result && (
+          <button className="btn btn-secondary btn-sm" onClick={reset}>
+            <ArrowLeft size={14} /> Retour
           </button>
-        </div>
+        )}
       </div>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: 'calc(100vh - 73px)' }}>
-        {/* Analysis panel */}
-        {analysis && (
-          <div style={{ width: 280, minWidth: 280, borderRight: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                <FileText size={15} color="#7C3AED" /> Analyse PDF
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fileName}</div>
-            </div>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 16 }}>
-              <div><div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Budget</div><div style={{ fontWeight: 700, fontSize: 13 }}>{analysis.budget}</div></div>
-              <div><div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Échéance</div><div style={{ fontWeight: 700, fontSize: 13 }}>{analysis.deadline}</div></div>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>Exigences extraites</div>
-              {analysis.exigences.map(ex => (
-                <div key={ex.id} style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'flex-start' }}>
-                  {ex.statut === 'couverte'  && <CheckCircle2 size={15} color="#10B981" style={{ flexShrink: 0, marginTop: 1 }} />}
-                  {ex.statut === 'partielle' && <AlertCircle  size={15} color="#F59E0B" style={{ flexShrink: 0, marginTop: 1 }} />}
-                  {ex.statut === 'manquante' && <XCircle      size={15} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />}
-                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{ex.texte}</span>
+      <div className="page-body">
+        {/* ── Upload & History Panel ── */}
+        {!result && !loading && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 24, alignItems: 'start' }}>
+            {/* Upload Zone */}
+            <div>
+              <div className="card card-p" style={{ marginBottom: 20 }}>
+                <div className="form-group">
+                  <label className="form-label">ID de l'appel d'offres <span className="form-required">*</span></label>
+                  <input
+                    className="form-input"
+                    type="number" min="1"
+                    placeholder="Ex: 3"
+                    value={tenderId}
+                    onChange={e => setTenderId(e.target.value)}
+                  />
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Retrouvez l'ID dans la page Appels d'offres
+                  </div>
                 </div>
-              ))}
-              <div style={{ marginTop: 14, padding: 12, background: '#ECFDF5', border: '1px solid #D1FAE5', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#065F46' }}>Score global</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#10B981' }}>72%</div>
               </div>
+
+              <div className="card card-p" style={{ marginBottom: 20 }}>
+                {file ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 12, background: 'var(--primary-subtle)', borderRadius: 'var(--radius-md)' }}>
+                    <FileText size={28} color="var(--primary)" />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{file.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(0)} KB</div>
+                    </div>
+                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setFile(null)}><X size={14} /></button>
+                  </div>
+                ) : (
+                  <UploadZone onFile={setFile} disabled={false} />
+                )}
+              </div>
+
+              {error && (
+                <div style={{ padding: 16, background: 'var(--danger-bg)', border: '1px solid #FECACA', borderRadius: 'var(--radius-md)', marginBottom: 16, color: 'var(--danger)', fontSize: 13 }}>
+                  <strong>Erreur :</strong> {error}
+                </div>
+              )}
+
+              <button
+                className="btn btn-primary"
+                style={{ width: '100%', padding: 14, fontSize: 15, justifyContent: 'center' }}
+                disabled={!file || !tenderId}
+                onClick={runAnalysis}
+              >
+                <Sparkles size={18} /> Lancer l'analyse IA
+              </button>
+            </div>
+
+            {/* History Zone */}
+            <div className="card card-p">
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock size={15} /> Historique des analyses
+              </div>
+              
+              {history.length === 0 ? (
+                <div className="empty-state" style={{ padding: '30px 10px' }}>
+                  <div className="empty-state-icon" style={{ width: 48, height: 48, margin: '0 auto 10px' }}><FileText size={20} /></div>
+                  <div className="empty-state-title" style={{ fontSize: 14 }}>Aucun historique</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {history.map((h, i) => {
+                    const color = h.score ? (h.score.total_score >= 80 ? '#10B981' : h.score.total_score >= 60 ? '#F59E0B' : h.score.total_score >= 40 ? '#F97316' : '#EF4444') : 'var(--text-muted)';
+                    return (
+                      <div key={i} onClick={() => loadPastAnalysis(h.analysis.tender_id)} style={{
+                        padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
+                        background: 'var(--surface-2)', cursor: 'pointer', transition: 'all .2s'
+                      }} onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary-light)'} onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {h.analysis.extracted_title || h.analysis.filename}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Tender #{h.analysis.tender_id}</div>
+                          {h.score ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: color, background: color+'15', padding: '2px 8px', borderRadius: 99 }}>
+                              {h.score.total_score}/100
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--warning)', background: 'var(--warning-bg)', padding: '2px 8px', borderRadius: 99 }}>Échoué</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Chat area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {messages.map((m, i) => (
-              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
-                <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: m.role === 'bot' ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {m.role === 'bot' ? <Sparkles size={16} color="#fff" /> : <UserIcon size={16} color="#475569" />}
+        {/* ── Pipeline Progress ── */}
+        {loading && (
+          <div style={{ maxWidth: 480, margin: '0 auto' }}>
+            <div className="card card-p">
+              <PipelineProgress step={pipelineStep} />
+            </div>
+          </div>
+        )}
+
+        {/* ── Results Dashboard ── */}
+        {result && score && (
+          <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 24, alignItems: 'start' }}>
+
+            {/* Left — Score Panel */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div className="card card-p" style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 20 }}>
+                  Tender Fit Score
                 </div>
-                <div style={{ maxWidth: '70%', background: m.role === 'bot' ? 'var(--surface)' : 'linear-gradient(135deg,#7C3AED,#6D28D9)', border: m.role === 'bot' ? '1px solid var(--border)' : 'none', borderRadius: m.role === 'bot' ? '4px 14px 14px 14px' : '14px 4px 14px 14px', padding: '12px 15px', boxShadow: 'var(--shadow-sm)' }}>
-                  <div style={{ fontSize: 14, lineHeight: 1.65, color: m.role === 'bot' ? 'var(--text-primary)' : '#fff' }} dangerouslySetInnerHTML={{ __html: renderContent(m.content) }} />
+                <ScoreGauge score={score.total_score} label={score.label} />
+                <div style={{ marginTop: 20, padding: 14, borderRadius: 'var(--radius-md)', background: 'var(--surface-2)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  {score.recommendation}
                 </div>
               </div>
-            ))}
-            {loading && (
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#6D28D9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Sparkles size={16} color="#fff" /></div>
-                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px 14px 14px 14px', padding: '14px 18px', display: 'flex', gap: 5 }}>
-                  {[0,1,2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: '#7C3AED', animation: `bounce .9s ease ${i*.15}s infinite` }} />)}
+
+              <div className="card card-p">
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 16 }}>
+                  Dimensions
                 </div>
+                <DimBar label="Adéquation services" score={score.service_match_score} max={30} icon={Layers} color="#7C3AED" />
+                <DimBar label="Secteur" score={score.sector_fit_score} max={20} icon={Target} color="#3B82F6" />
+                <DimBar label="Budget" score={score.budget_alignment_score} max={15} icon={DollarSign} color="#10B981" />
+                <DimBar label="Timeline" score={score.timeline_score} max={15} icon={Clock} color="#F59E0B" />
+                <DimBar label="Géographie" score={score.geographic_score} max={10} icon={MapPin} color="#06B6D4" />
+                <DimBar label="Similarité passée" score={score.past_similarity_score || 0} max={10} icon={Award} color="#EC4899" />
               </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-
-          {messages.length <= 1 && (
-            <div style={{ padding: '0 28px 14px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {SUGGESTED.map(s => (
-                <button key={s} onClick={() => handleSend(s)} style={{ fontSize: 12.5, fontWeight: 500, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, padding: '6px 13px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Zap size={11} color="#7C3AED" />{s}
-                </button>
-              ))}
             </div>
-          )}
 
-          <div style={{ padding: '14px 28px', borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: 'var(--surface-2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '10px 14px' }}>
-              <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder="Posez votre question… (Entrée pour envoyer)" style={{ flex: 1, border: 'none', background: 'transparent', resize: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5, maxHeight: 100, minHeight: 22 }} rows={1} />
-              <button onClick={() => handleSend()} disabled={!input.trim() || loading} className="btn btn-primary btn-icon" style={{ borderRadius: 10, flexShrink: 0 }}>
-                {loading ? <Loader2 size={17} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={17} />}
-              </button>
+            {/* Right — Tabs */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {/* Tender info strip */}
+              {analysis && (
+                <div className="card card-p" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                  {[
+                    { label: 'Secteur', value: analysis.sector || '—' },
+                    { label: 'Type', value: analysis.tender_type || '—' },
+                    { label: 'Client', value: analysis.client_name || '—' },
+                    { label: 'Durée', value: analysis.estimated_duration_weeks ? `${analysis.estimated_duration_weeks} sem.` : '—' },
+                  ].map(it => (
+                    <div key={it.label}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{it.label}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{it.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+                {[
+                  { key: 'score', label: 'Analyse', icon: TrendingUp },
+                  { key: 'reqs', label: `Exigences (${analysis?.requirements?.length || 0})`, icon: FileText },
+                ].map(t => (
+                  <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px',
+                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, fontWeight: 600,
+                    color: activeTab === t.key ? 'var(--primary)' : 'var(--text-muted)',
+                    borderBottom: activeTab === t.key ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    marginBottom: -1
+                  }}>
+                    <t.icon size={14} />{t.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="card card-p">
+                {activeTab === 'score' && (
+                  <div>
+                    {/* Summary */}
+                    {analysis?.summary && (
+                      <div style={{ marginBottom: 24 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>Résumé du tender</div>
+                        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{analysis.summary}</p>
+                      </div>
+                    )}
+                    {/* Reasoning */}
+                    {score.reasoning && (
+                      <div style={{ marginBottom: 24 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>Analyse du score</div>
+                        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{score.reasoning}</p>
+                      </div>
+                    )}
+                    {/* Strengths & Risks */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      {score.strengths?.length > 0 && (
+                        <div style={{ background: '#ECFDF5', border: '1px solid #D1FAE5', borderRadius: 'var(--radius-md)', padding: 16 }}>
+                          <div style={{ fontWeight: 700, fontSize: 12, color: '#065F46', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <CheckCircle2 size={14} /> Points forts
+                          </div>
+                          {score.strengths.map((s, i) => (
+                            <div key={i} style={{ fontSize: 13, color: '#047857', marginBottom: 6, display: 'flex', gap: 6 }}>
+                              <span style={{ color: '#10B981', marginTop: 2 }}>✓</span>{s}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {score.risks?.length > 0 && (
+                        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 'var(--radius-md)', padding: 16 }}>
+                          <div style={{ fontWeight: 700, fontSize: 12, color: '#991B1B', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <AlertTriangle size={14} /> Risques
+                          </div>
+                          {score.risks.map((r, i) => (
+                            <div key={i} style={{ fontSize: 13, color: '#B91C1C', marginBottom: 6, display: 'flex', gap: 6 }}>
+                              <span style={{ color: '#EF4444', marginTop: 2 }}>!</span>{r}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Deliverables */}
+                    {analysis?.key_deliverables?.length > 0 && (
+                      <div style={{ marginTop: 20 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>Livrables clés</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {analysis.key_deliverables.map((d, i) => (
+                            <span key={i} style={{ padding: '5px 12px', background: 'var(--primary-subtle)', color: 'var(--primary)', borderRadius: 99, fontSize: 12.5, fontWeight: 600 }}>{d}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'reqs' && analysis?.requirements?.length > 0 && (
+                  <RequirementsList requirements={analysis.requirements} />
+                )}
+
+                {activeTab === 'reqs' && (!analysis?.requirements || analysis.requirements.length === 0) && (
+                  <div className="empty-state">
+                    <div className="empty-state-icon"><FileText size={28} /></div>
+                    <div className="empty-state-title">Aucune exigence extraite</div>
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', marginTop: 7 }}>Alimenté par GPT-4o · Yellomind TMS AI</div>
           </div>
-        </div>
+        )}
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
     </>
   );
 }

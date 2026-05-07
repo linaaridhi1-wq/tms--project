@@ -17,6 +17,54 @@ export default function ReportsPage() {
   const [monthly, setMonthly] = useState([]);
   const [recentResults, setRecentResults] = useState([]);
 
+  const buildCsvRow = (cells) => cells.map((value) => {
+    const text = String(value ?? '');
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }).join(',');
+
+  const handleExport = () => {
+    const lines = [];
+    lines.push('KPIs');
+    lines.push(buildCsvRow(['Label', 'Valeur', 'Description']));
+    lines.push(buildCsvRow(['Total AO traites', kpis.totalTenders ?? '—', 'Depuis le debut']));
+    lines.push(buildCsvRow(['Taux de succes', kpis.winRate === null ? '—' : `${kpis.winRate}%`, 'Gagnes vs perdus']));
+    lines.push(buildCsvRow(['Valeur gagnee', kpis.valueWon ?? '—', 'En milliers DA']));
+    lines.push(buildCsvRow(['Delai moyen', kpis.avgDelayDays === null ? '—' : `${kpis.avgDelayDays}j`, 'De detection a soumission']));
+    lines.push('');
+
+    lines.push('Performance par secteur');
+    lines.push(buildCsvRow(['Secteur', 'Gagnes', 'Total', 'Taux']));
+    sectorData.forEach((s) => {
+      lines.push(buildCsvRow([s.name, s.won, s.total, `${s.rate}%`]));
+    });
+    lines.push('');
+
+    lines.push('Volume mensuel');
+    lines.push(buildCsvRow(['Mois', 'AO traites', 'Gagnes']));
+    monthly.forEach((m) => {
+      lines.push(buildCsvRow([m.month, m.tenders, m.won]));
+    });
+    lines.push('');
+
+    lines.push('Resultats recents');
+    lines.push(buildCsvRow(['Appel doffres', 'Resultat', 'Montant', 'Date']));
+    recentResults.forEach((r) => {
+      lines.push(buildCsvRow([r.titre, r.statut, r.montant, r.date]));
+    });
+
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rapports-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Export CSV termine');
+  };
+
   const load = useCallback(async () => {
     try {
       const r = await api.get('/stats/reports');
@@ -39,7 +87,7 @@ export default function ReportsPage() {
           <div className="page-breadcrumb"><span>TMS</span><span>›</span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Rapports</span></div>
           <h1 className="page-title" style={{ marginTop: 2 }}>Rapports & Analytics</h1>
         </div>
-        <button className="btn btn-secondary btn-sm" onClick={() => toast('Export PDF à venir', { icon: '📄' })}>
+        <button className="btn btn-secondary btn-sm" onClick={handleExport}>
           <Download size={15} /> Exporter
         </button>
       </div>
@@ -71,7 +119,7 @@ export default function ReportsPage() {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+        <div className="reports-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
           {/* Monthly chart */}
           <div className="card card-p">
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Volume mensuel</div>
@@ -123,24 +171,26 @@ export default function ReportsPage() {
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Historique des soumissions avec résultats</div>
             </div>
           </div>
-          <table className="tms-table">
-            <thead><tr><th>Appel d&apos;offres</th><th>Résultat</th><th>Montant</th><th>Date</th></tr></thead>
-            <tbody>
-              {recentResults.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 600 }}>{r.titre}</td>
-                  <td>
-                    <span className={`badge ${r.statut === 'gagne' ? 'badge-green' : r.statut === 'perdu' ? 'badge-red' : 'badge-slate'}`}>
-                      <span className="badge-dot" style={{ background: r.statut === 'gagne' ? '#10B981' : r.statut === 'perdu' ? '#EF4444' : '#94A3B8' }} />
-                      {r.statut === 'gagne' ? 'Gagné' : r.statut === 'perdu' ? 'Perdu' : 'En attente'}
-                    </span>
-                  </td>
-                  <td style={{ fontWeight: 700 }}>{r.montant}</td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{r.date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="tms-table">
+              <thead><tr><th>Appel d&apos;offres</th><th>Résultat</th><th>Montant</th><th>Date</th></tr></thead>
+              <tbody>
+                {recentResults.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 600 }}>{r.titre}</td>
+                    <td>
+                      <span className={`badge ${r.statut === 'gagne' ? 'badge-green' : r.statut === 'perdu' ? 'badge-red' : 'badge-slate'}`}>
+                        <span className="badge-dot" style={{ background: r.statut === 'gagne' ? '#10B981' : r.statut === 'perdu' ? '#EF4444' : '#94A3B8' }} />
+                        {r.statut === 'gagne' ? 'Gagné' : r.statut === 'perdu' ? 'Perdu' : 'En attente'}
+                      </span>
+                    </td>
+                    <td style={{ fontWeight: 700 }}>{r.montant}</td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{r.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </>

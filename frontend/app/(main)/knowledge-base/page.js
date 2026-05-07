@@ -1,10 +1,28 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Search, Plus, Tag, Star, X, Copy } from 'lucide-react';
+import { BookOpen, Search, Plus, Tag, Star, X, Copy, Pencil, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../../lib/api';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 const CATEGORIES = ['Tous', 'Résumé exécutif', 'Proposition technique', 'Offre commerciale', 'Méthodologie', 'Références', 'Équipe projet', 'Planning'];
+
+const EMPTY_ITEM = { titre: '', categorie: 'Résumé exécutif', secteur: '', contenu: '' };
+
+function Modal({ open, title, onClose, children }) {
+  if (!open) return null;
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">{title}</span>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function KnowledgeBasePage() {
   const [items,    setItems]   = useState([]);
@@ -12,8 +30,17 @@ export default function KnowledgeBasePage() {
   const [search,   setSearch]  = useState('');
   const [category, setCategory] = useState('Tous');
   const [selected, setSelected] = useState(null);
-  const [showAdd,  setShowAdd] = useState(false);
-  const [newItem,  setNewItem] = useState({ titre: '', categorie: 'Résumé exécutif', secteur: '', contenu: '' });
+  const [showForm, setShowForm] = useState(false);
+  const [editing,  setEditing]  = useState(null);
+  const [formItem, setFormItem] = useState(EMPTY_ITEM);
+  const [saving,   setSaving]   = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+
+  useEffect(() => {
+    const raw = localStorage.getItem('user');
+    if (raw) try { setUserRole(JSON.parse(raw)?.role); } catch { /**/ }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -29,22 +56,49 @@ export default function KnowledgeBasePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const canWrite = userRole !== 'Consultant';
+
   const filtered = items.filter(i => {
     const matchSearch = (i.titre || '').toLowerCase().includes(search.toLowerCase()) || (i.contenu || '').toLowerCase().includes(search.toLowerCase());
     const matchCat    = category === 'Tous' || i.categorie === category;
     return matchSearch && matchCat;
   });
 
-  const handleAdd = async (e) => {
+  const openCreate = () => { setEditing(null); setFormItem(EMPTY_ITEM); setShowForm(true); };
+  const openEdit   = (item) => { setEditing(item); setFormItem({ titre: item.titre, categorie: item.categorie, secteur: item.secteur || '', contenu: item.contenu || '' }); setShowForm(true); };
+
+  const handleSave = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
-      await api.post('/knowledge-base', newItem);
-      toast.success('Élément ajouté à la base de savoirs');
-      setShowAdd(false);
-      setNewItem({ titre: '', categorie: 'Résumé exécutif', secteur: '', contenu: '' });
+      if (editing) {
+        await api.put(`/knowledge-base/${editing.item_id}`, formItem);
+        toast.success('Élément mis à jour');
+      } else {
+        await api.post('/knowledge-base', formItem);
+        toast.success('Élément ajouté à la base de savoirs');
+      }
+      setShowForm(false);
+      setEditing(null);
+      setFormItem(EMPTY_ITEM);
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Erreur');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      await api.delete(`/knowledge-base/${deleteConfirm.item_id}`);
+      toast.success('Élément supprimé');
+      setDeleteConfirm(null);
+      if (selected?.item_id === deleteConfirm.item_id) setSelected(null);
+      load();
+    } catch {
+      toast.error('Erreur lors de la suppression');
     }
   };
 
@@ -67,9 +121,11 @@ export default function KnowledgeBasePage() {
           <div className="page-breadcrumb"><span>TMS</span><span>›</span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Base de savoirs</span></div>
           <h1 className="page-title" style={{ marginTop: 2 }}>Base de savoirs</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-          <Plus size={16} /> Nouvel élément
-        </button>
+        {canWrite && (
+          <button className="btn btn-primary" onClick={openCreate}>
+            <Plus size={16} /> Nouvel élément
+          </button>
+        )}
       </div>
 
       <div className="page-body">
@@ -93,7 +149,7 @@ export default function KnowledgeBasePage() {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24 }}>
+        <div className="knowledge-grid" style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24 }}>
           {/* Sidebar categories */}
           <div className="card card-p" style={{ alignSelf: 'start' }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: 'var(--text-primary)' }}>Catégories</div>
@@ -117,25 +173,15 @@ export default function KnowledgeBasePage() {
 
           {/* Content */}
           <div>
-            {/* Search */}
             <div className="search-bar" style={{ marginBottom: 16 }}>
               <Search size={15} className="search-icon" />
               <input className="form-input" style={{ paddingLeft: 36, height: 40 }} placeholder="Rechercher dans la base de savoirs…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
-            {/* Cards grid */}
             {loading ? (
-              <div className="empty-state card">
-                <div className="empty-state-icon"><BookOpen size={28} /></div>
-                <div className="empty-state-title">Chargement…</div>
-                <div className="empty-state-desc">Récupération de la base de savoirs.</div>
-              </div>
+              <div className="empty-state card"><div className="empty-state-icon"><BookOpen size={28} /></div><div className="empty-state-title">Chargement…</div></div>
             ) : filtered.length === 0 ? (
-              <div className="empty-state card">
-                <div className="empty-state-icon"><BookOpen size={28} /></div>
-                <div className="empty-state-title">Aucun élément trouvé</div>
-                <div className="empty-state-desc">Essayez un autre terme de recherche ou une autre catégorie.</div>
-              </div>
+              <div className="empty-state card"><div className="empty-state-icon"><BookOpen size={28} /></div><div className="empty-state-title">Aucun élément trouvé</div></div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {filtered.map(item => (
@@ -156,11 +202,15 @@ export default function KnowledgeBasePage() {
                           {item.contenu}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
-                        <button className="btn btn-ghost btn-icon btn-sm" onClick={e => { e.stopPropagation(); handleCopy(item); }} title="Copier">
-                          <Copy size={15} />
-                        </button>
-                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleCopy(item)} title="Copier"><Copy size={15} /></button>
+                        {canWrite && (
+                          <>
+                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(item)} title="Modifier"><Pencil size={14} /></button>
+                            <button className="btn btn-danger btn-icon btn-sm" onClick={() => setDeleteConfirm(item)} title="Supprimer"><Trash2 size={14} /></button>
+                          </>
+                        )}
+                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'right', marginTop: 4 }}>
                           <div style={{ fontWeight: 600 }}>{item.usages}</div>
                           <div>usages</div>
                         </div>
@@ -195,6 +245,7 @@ export default function KnowledgeBasePage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setSelected(null)}>Fermer</button>
+              {canWrite && <button className="btn btn-ghost" onClick={() => { openEdit(selected); setSelected(null); }}><Pencil size={14} /> Modifier</button>}
               <button className="btn btn-ghost" onClick={() => handleCopy(selected)}><Copy size={14} /> Copier</button>
               <button className="btn btn-primary" onClick={() => { toast.success('Inséré dans la soumission'); setSelected(null); }}>
                 Utiliser dans une soumission
@@ -204,45 +255,46 @@ export default function KnowledgeBasePage() {
         </div>
       )}
 
-      {/* Add Modal */}
-      {showAdd && (
-        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
-          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Nouvel élément</span>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowAdd(false)}><X size={18} /></button>
+      {/* Create / Edit Modal */}
+      <Modal open={showForm} title={editing ? 'Modifier l\'élément' : 'Nouvel élément'} onClose={() => { setShowForm(false); setEditing(null); }}>
+        <form onSubmit={handleSave}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+            <div className="form-group">
+              <label className="form-label">Titre <span className="form-required">*</span></label>
+              <input required className="form-input" value={formItem.titre} onChange={e => setFormItem(p=>({...p,titre:e.target.value}))} placeholder="Titre de l'élément" />
             </div>
-            <form onSubmit={handleAdd}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
-                <div className="form-group">
-                  <label className="form-label">Titre <span className="form-required">*</span></label>
-                  <input required className="form-input" value={newItem.titre} onChange={e => setNewItem(p=>({...p,titre:e.target.value}))} placeholder="Titre de l'élément" />
-                </div>
-                <div className="grid-2">
-                  <div className="form-group">
-                    <label className="form-label">Catégorie</label>
-                    <select className="form-select" value={newItem.categorie} onChange={e => setNewItem(p=>({...p,categorie:e.target.value}))}>
-                      {CATEGORIES.filter(c=>c!=='Tous').map(c=><option key={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Secteur</label>
-                    <input className="form-input" value={newItem.secteur} onChange={e => setNewItem(p=>({...p,secteur:e.target.value}))} placeholder="IT, Finance, Public…" />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Contenu <span className="form-required">*</span></label>
-                  <textarea required className="form-textarea" style={{ minHeight: 140 }} value={newItem.contenu} onChange={e => setNewItem(p=>({...p,contenu:e.target.value}))} placeholder="Texte réutilisable…" />
-                </div>
+            <div className="grid-2">
+              <div className="form-group">
+                <label className="form-label">Catégorie</label>
+                <select className="form-select" value={formItem.categorie} onChange={e => setFormItem(p=>({...p,categorie:e.target.value}))}>
+                  {CATEGORIES.filter(c=>c!=='Tous').map(c=><option key={c}>{c}</option>)}
+                </select>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAdd(false)}>Annuler</button>
-                <button type="submit" className="btn btn-primary">Ajouter</button>
+              <div className="form-group">
+                <label className="form-label">Secteur</label>
+                <input className="form-input" value={formItem.secteur} onChange={e => setFormItem(p=>({...p,secteur:e.target.value}))} placeholder="IT, Finance, Public…" />
               </div>
-            </form>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Contenu <span className="form-required">*</span></label>
+              <textarea required className="form-textarea" style={{ minHeight: 140 }} value={formItem.contenu} onChange={e => setFormItem(p=>({...p,contenu:e.target.value}))} placeholder="Texte réutilisable…" />
+            </div>
           </div>
-        </div>
-      )}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Enregistrement…' : editing ? 'Mettre à jour' : 'Ajouter'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteConfirm}
+        title="Confirmation de suppression"
+        message={`Supprimer "${deleteConfirm?.titre}" ? Cette action est irréversible.`}
+        confirmText="Supprimer"
+        onConfirm={confirmDelete}
+        onClose={() => setDeleteConfirm(null)}
+      />
     </>
   );
 }

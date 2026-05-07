@@ -4,29 +4,62 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, FileText, ClipboardList,
-  BookOpen, Sparkles, BarChart3, Settings, Moon, Sun, ChevronRight, Menu
+  BookOpen, Sparkles, BarChart3, Settings, Moon, Sun,
+  ChevronRight, Menu, Calendar, UserCog
 } from 'lucide-react';
 
-const navItems = [
-  { href: '/dashboard',      label: 'Tableau de bord',  icon: LayoutDashboard },
-  { href: '/clients',        label: 'Clients',          icon: Users },
-  { href: '/tenders',        label: 'Appels d\'offres', icon: FileText },
-  { href: '/submissions',    label: 'Soumissions',      icon: ClipboardList },
-  { href: '/knowledge-base', label: 'Base de savoirs',  icon: BookOpen },
-  { href: '/ai-assistant',   label: 'Assistant IA',     icon: Sparkles },
-  { href: '/reports',        label: 'Rapports',         icon: BarChart3 },
-];
+// ── Nav items per role ────────────────────────────────────────────────
+const NAV_BY_ROLE = {
+  Admin: [
+    { href: '/dashboard',      label: 'Tableau de bord', icon: LayoutDashboard },
+    { href: '/tenders',        label: "Appels d'offres",  icon: FileText        },
+    { href: '/submissions',    label: 'Soumissions',      icon: ClipboardList   },
+    { href: '/knowledge-base', label: 'Base de savoirs',  icon: BookOpen        },
+    { href: '/ai-assistant',   label: 'Assistant IA',     icon: Sparkles        },
+    { href: '/reports',        label: 'Rapports',         icon: BarChart3       },
+    { href: '/planning',       label: 'Planning',         icon: Calendar        },
+    { href: '/users',          label: 'Utilisateurs',     icon: UserCog         },
+  ],
+  Manager: [
+    { href: '/dashboard',      label: 'Tableau de bord', icon: LayoutDashboard },
+    { href: '/clients',        label: 'Clients',          icon: Users           },
+    { href: '/tenders',        label: "Appels d'offres",  icon: FileText        },
+    { href: '/submissions',    label: 'Soumissions',      icon: ClipboardList   },
+    { href: '/knowledge-base', label: 'Base de savoirs',  icon: BookOpen        },
+    { href: '/ai-assistant',   label: 'Assistant IA',     icon: Sparkles        },
+    { href: '/reports',        label: 'Rapports',         icon: BarChart3       },
+    { href: '/planning',       label: 'Planning',         icon: Calendar        },
+  ],
+  Consultant: [
+    { href: '/tenders',        label: "Mes appels d'offres", icon: FileText     },
+    { href: '/submissions',    label: 'Soumissions',         icon: ClipboardList},
+    { href: '/knowledge-base', label: 'Base de savoirs',     icon: BookOpen     },
+    { href: '/ai-assistant',   label: 'Assistant IA',        icon: Sparkles     },
+    { href: '/planning',       label: 'Planning',            icon: Calendar     },
+  ],
+};
 
-export default function Sidebar() {
+// Fallback (unknown role) — minimal
+const NAV_DEFAULT = NAV_BY_ROLE.Consultant;
+
+export default function Sidebar({ mobileOpen = false, onNavigate }) {
   const pathname = usePathname();
-  const [theme, setTheme]     = useState('light');
+  const [theme,     setTheme]     = useState('light');
   const [collapsed, setCollapsed] = useState(false);
+  const [role,      setRole]      = useState(null);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || 'light';
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
+
+    const raw = localStorage.getItem('user');
+    if (raw) {
+      try { setRole(JSON.parse(raw)?.role || null); } catch { /* */ }
+    }
   }, []);
+
+  const navItems = NAV_BY_ROLE[role] || NAV_DEFAULT;
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -35,9 +68,18 @@ export default function Sidebar() {
     document.documentElement.setAttribute('data-theme', newTheme);
   };
 
+  // ── Role badge color ──────────────────────────────────────────────
+  const roleMeta = {
+    Admin:      { color: '#7C3AED', bg: '#EDE9FE', label: 'Admin'      },
+    Manager:    { color: '#2563EB', bg: '#EFF6FF', label: 'Manager'    },
+    Consultant: { color: '#059669', bg: '#ECFDF5', label: 'Consultant' },
+  }[role] || { color: '#94A3B8', bg: '#F1F5F9', label: role };
+
+  const isCollapsed = mobileOpen ? false : collapsed;
+
   return (
     <aside
-      className={`sidebar${collapsed ? ' collapsed' : ''}`}
+      className={`sidebar${isCollapsed ? ' collapsed' : ''}${mobileOpen ? ' mobile-open' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', height: '100vh', borderRight: '1px solid var(--sidebar-border)' }}
     >
       {/* ── Logo area ── */}
@@ -47,13 +89,11 @@ export default function Sidebar() {
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          /* When collapsed: center the burger; when open: space-between */
           justifyContent: collapsed ? 'center' : 'flex-start',
           padding: collapsed ? '20px 0' : '20px 16px',
           gap: 12,
         }}
       >
-        {/* Collapsed state → ONLY hamburger (clicks to expand) */}
         {collapsed ? (
           <button
             onClick={() => setCollapsed(false)}
@@ -74,7 +114,6 @@ export default function Sidebar() {
             <Menu size={20} />
           </button>
         ) : (
-          /* Expanded state → logo + title + hamburger to collapse */
           <>
             <div className="sidebar-logo-icon" style={{ padding: 0, overflow: 'hidden', background: '#fff', flexShrink: 0 }}>
               <img src="/logo.jpg" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
@@ -106,6 +145,20 @@ export default function Sidebar() {
         )}
       </div>
 
+      {/* ── Role badge (when expanded) ── */}
+      {!collapsed && role && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: roleMeta.bg, color: roleMeta.color,
+            borderRadius: 99, padding: '4px 12px', fontSize: 11.5, fontWeight: 700,
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: roleMeta.color }} />
+            {roleMeta.label}
+          </div>
+        </div>
+      )}
+
       {/* ── Navigation ── */}
       <div className="sidebar-section" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="sidebar-section-label">Navigation</div>
@@ -118,6 +171,7 @@ export default function Sidebar() {
               href={href}
               className={`nav-item${active ? ' active' : ''}`}
               title={collapsed ? label : ''}
+              onClick={() => onNavigate?.()}
             >
               <Icon className="nav-icon" size={18} />
               <span>{label}</span>
@@ -136,6 +190,7 @@ export default function Sidebar() {
             href="/settings"
             className={`nav-item${pathname === '/settings' ? ' active' : ''}`}
             title={collapsed ? 'Paramètres' : ''}
+            onClick={() => onNavigate?.()}
           >
             <Settings className="nav-icon" size={18} />
             <span>Paramètres</span>

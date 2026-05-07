@@ -135,7 +135,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Main content row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
+        <div className="dashboard-main-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
 
           {/* Recent Tenders Table */}
           <div className="card">
@@ -148,68 +148,70 @@ export default function DashboardPage() {
                 Tout voir <ArrowUpRight size={13} />
               </Link>
             </div>
-            <table className="tms-table">
-              <thead>
-                <tr>
-                  <th>Intitulé</th>
-                  <th>Client</th>
-                  <th>Statut</th>
-                  <th>Échéance</th>
-                  <th>Budget estimé</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && recentTenders.length === 0 ? (
+            <div className="table-scroll">
+              <table className="tms-table">
+                <thead>
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '18px 0' }}>
-                      Chargement…
-                    </td>
+                    <th>Intitulé</th>
+                    <th>Client</th>
+                    <th>Statut</th>
+                    <th>Échéance</th>
+                    <th>Budget estimé</th>
                   </tr>
-                ) : recentTenders.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '18px 0' }}>
-                      Aucun appel d&apos;offres
-                    </td>
-                  </tr>
-                ) : recentTenders.map(t => {
-                  const s = STATUS_CONFIG[t.statut] || STATUS_CONFIG.detecte;
-                  const daysLeft = t.date_limite ? Math.ceil((new Date(t.date_limite) - now) / 86400000) : null;
-                  return (
-                    <tr key={t.tender_id}>
-                      <td>
-                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t.titre}</div>
+                </thead>
+                <tbody>
+                  {loading && recentTenders.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '18px 0' }}>
+                        Chargement…
                       </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{t.client}</td>
-                      <td>
-                        <span className={`badge ${s.cls}`}>
-                          <span className="badge-dot" style={{
-                            background: s.cls.includes('green') ? '#10B981'
-                              : s.cls.includes('amber') ? '#F59E0B'
-                              : s.cls.includes('blue') ? '#3B82F6'
-                              : s.cls.includes('purple') ? '#7C3AED'
-                              : s.cls.includes('red') ? '#EF4444' : '#94A3B8'
-                          }} />
-                          {s.label}
-                        </span>
-                      </td>
-                      <td>
-                        {daysLeft === null ? (
-                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Clock size={13} style={{ color: daysLeft < 7 ? '#EF4444' : 'var(--text-muted)' }} />
-                            <span style={{ fontSize: 13, color: daysLeft < 7 ? '#EF4444' : 'var(--text-secondary)', fontWeight: daysLeft < 7 ? 600 : 400 }}>
-                              {daysLeft > 0 ? `J-${daysLeft}` : 'Expiré'}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.budget || '—'}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ) : recentTenders.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '18px 0' }}>
+                        Aucun appel d&apos;offres
+                      </td>
+                    </tr>
+                  ) : recentTenders.map(t => {
+                    const s = STATUS_CONFIG[t.statut] || STATUS_CONFIG.detecte;
+                    const daysLeft = t.date_limite ? Math.ceil((new Date(t.date_limite) - now) / 86400000) : null;
+                    return (
+                      <tr key={t.tender_id}>
+                        <td>
+                          <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t.titre}</div>
+                        </td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{t.client}</td>
+                        <td>
+                          <span className={`badge ${s.cls}`}>
+                            <span className="badge-dot" style={{
+                              background: s.cls.includes('green') ? '#10B981'
+                                : s.cls.includes('amber') ? '#F59E0B'
+                                : s.cls.includes('blue') ? '#3B82F6'
+                                : s.cls.includes('purple') ? '#7C3AED'
+                                : s.cls.includes('red') ? '#EF4444' : '#94A3B8'
+                            }} />
+                            {s.label}
+                          </span>
+                        </td>
+                        <td>
+                          {daysLeft === null ? (
+                            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Clock size={13} style={{ color: daysLeft < 7 ? '#EF4444' : 'var(--text-muted)' }} />
+                              <span style={{ fontSize: 13, color: daysLeft < 7 ? '#EF4444' : 'var(--text-secondary)', fontWeight: daysLeft < 7 ? 600 : 400 }}>
+                                {daysLeft > 0 ? `J-${daysLeft}` : 'Expiré'}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.budget || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Right column */}

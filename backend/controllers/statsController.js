@@ -45,7 +45,7 @@ exports.dashboard = async (req, res) => {
       Tender.count({ where: { actif: true, statut: 'perdu' } }),
       Tender.findAll({
         where: { actif: true },
-        order: [['date_creation', 'DESC']],
+        order: [['date_creation', 'DESC'], ['tender_id', 'DESC']],
         limit: 5,
       }),
       Tender.findAll({ where: { actif: true }, attributes: ['statut'] }),

@@ -149,70 +149,72 @@ export default function ClientsPage() {
               {!search && <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nouveau client</button>}
             </div>
           ) : (
-            <table className="tms-table">
-              <thead>
-                <tr>
-                  <th>Raison sociale</th>
-                  <th>Secteur</th>
-                  <th>Contact</th>
-                  <th>Pays</th>
-                  <th>Statut</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(c => (
-                  <tr key={c.client_id} onClick={() => setSelected(c)} style={{ cursor: 'pointer' }}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{
-                          width: 34, height: 34, borderRadius: 8,
-                          background: 'linear-gradient(135deg, #7C3AED22, #6D28D922)',
-                          border: '1px solid #7C3AED33',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 13, fontWeight: 700, color: '#7C3AED', flexShrink: 0,
-                        }}>
-                          {c.raison_sociale?.[0]?.toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 13.5 }}>{c.raison_sociale}</div>
-                          {c.email && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.email}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      {c.secteur
-                        ? <span className="badge badge-blue">{c.secteur}</span>
-                        : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>}
-                    </td>
-                    <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                      {c.contact || <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                    </td>
-                    <td>
-                      {c.pays
-                        ? <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)', fontSize: 13 }}><MapPin size={12} />{c.pays}</div>
-                        : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                    </td>
-                    <td>
-                      <span className={`badge ${c.actif !== false ? 'badge-green' : 'badge-slate'}`}>
-                        <span className="badge-dot" style={{ background: c.actif !== false ? '#10B981' : '#94A3B8' }} />
-                        {c.actif !== false ? 'Actif' : 'Inactif'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
-                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(c)} title="Modifier">
-                          <Pencil size={14} />
-                        </button>
-                        <button className="btn btn-danger btn-icon btn-sm" onClick={() => handleDelete(c)} title="Supprimer">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
+            <div className="table-scroll">
+              <table className="tms-table">
+                <thead>
+                  <tr>
+                    <th>Raison sociale</th>
+                    <th>Secteur</th>
+                    <th>Contact</th>
+                    <th>Pays</th>
+                    <th>Statut</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filtered.map(c => (
+                    <tr key={c.client_id} onClick={() => setSelected(c)} style={{ cursor: 'pointer' }}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 34, height: 34, borderRadius: 8,
+                            background: 'linear-gradient(135deg, #7C3AED22, #6D28D922)',
+                            border: '1px solid #7C3AED33',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 13, fontWeight: 700, color: '#7C3AED', flexShrink: 0,
+                          }}>
+                            {c.raison_sociale?.[0]?.toUpperCase()}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>{c.raison_sociale}</div>
+                            {c.email && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.email}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {c.secteur
+                          ? <span className="badge badge-blue">{c.secteur}</span>
+                          : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                        {c.contact || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                      <td>
+                        {c.pays
+                          ? <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)', fontSize: 13 }}><MapPin size={12} />{c.pays}</div>
+                          : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                      <td>
+                        <span className={`badge ${c.actif !== false ? 'badge-green' : 'badge-slate'}`}>
+                          <span className="badge-dot" style={{ background: c.actif !== false ? '#10B981' : '#94A3B8' }} />
+                          {c.actif !== false ? 'Actif' : 'Inactif'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(c)} title="Modifier">
+                            <Pencil size={14} />
+                          </button>
+                          <button className="btn btn-danger btn-icon btn-sm" onClick={() => handleDelete(c)} title="Supprimer">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>

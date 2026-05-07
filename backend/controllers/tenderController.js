@@ -32,6 +32,7 @@ exports.creer = async (req, res) => {
       budget: req.body.budget || null,
       responsable: req.body.responsable || null,
       description: req.body.description || null,
+      date_creation: req.body.date_creation || new Date(),
     };
     const tender = await Tender.create(data);
     res.status(201).json(tender);
